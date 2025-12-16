@@ -1,0 +1,251 @@
+Sub Main()
+    
+    'Set workbook parameters
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Application.Calculation = xlCalculationManual
+    
+    'turn off settings
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    'enter the sheet names
+    Dim as_is As String, to_be As String, out As String
+    as_is = "AS-IS PL"
+    to_be = "Rec. PL Guidelines"
+    out = "PL_Comp_NEW"
+
+    'give start location (row, col) of comparison
+    Dim Row As Integer, Col As Integer
+    Row = 8: Col = 5
+
+    'define highlight color to use
+    Dim highlight_color As Long
+    highlight_color = RGB(241, 169, 131) 'Salmon-ish
+
+    'check if output sheet exists; delete and/or create
+    If sheetExists(out) = True Then
+        Application.DisplayAlerts = False
+        wb.Worksheets(out).Delete
+    End If
+    ActiveWorkbook.Sheets.Add.Name = out
+
+    'Store worksheets as objects
+    Dim as_is_ws As Worksheet, to_be_ws As Worksheet, out_ws As Worksheet
+    Set as_is_ws = ActiveWorkbook.Worksheets(as_is)
+    Set to_be_ws = ActiveWorkbook.Worksheets(to_be)
+    Set out_ws = ActiveWorkbook.Worksheets(out)
+
+    'copy from larger sheet, else use most recent extract (to-be)
+    Call Copy_Table_Outline(as_is_ws, to_be_ws, Row, Col, out_ws)
+    
+    'remove conditional formatting
+    Call Remove_Condtl_Fmts(out_ws)
+
+    'apply conditional format we want
+    Call Apply_Condtl_Fmt(out_ws, as_is, to_be, Row, Col, highlight_color)
+
+    'Bring in values
+    Call Data_Loop(as_is_ws, to_be_ws, out_ws, Row, Col)
+
+    'resize rows
+    out_ws.Activate
+    out_ws.Cells.EntireRow.AutoFit
+    ActiveWindow.Zoom = 70
+    out_ws.Cells(1, 1).Select
+
+    'Reset workbook parameters
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    Application.Calculation = xlCalculationAutomatic
+    
+End Sub
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'   RELEVANT FUNCTIONS AND MODULES
+'
+'
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Function sheetExists(sheetToFind As Variant) As Boolean
+    ' This function checks to see if the sheet we are going to create
+    ' already exists in the workbook
+    '
+    
+    sheetExists = False
+    For Each Sheet In Worksheets
+        If sheetToFind = Sheet.Name Then
+            sheetExists = True
+            Exit Function
+        End If
+    Next Sheet
+    
+End Function
+
+
+Sub Remove_Condtl_Fmts(ws As Worksheet)
+    ' Remove all conditional formats from the ActiveSheet (the currently selected sheet)
+    
+    ws.Cells.FormatConditions.Delete
+    
+End Sub
+        
+        
+Sub Apply_Condtl_Fmt(res As Worksheet, old As String, cur As String, Row As Integer, Col As Integer, highlight_color As Long)
+    ' Apply conditional format with formula: Sheet1!A1 <> Sheet2!A1
+    '
+    
+    With res
+        With .Range(.Cells(Row, Col), .Cells(999, 250)) _
+            .FormatConditions.Add( _
+                Type:=xlExpression, _
+                Formula1:="='" & old & "'!E" & Row & "<>'" & cur & "'!E" & Row)
+            .Interior.Color = highlight_color
+        End With
+    End With
+    
+End Sub
+
+
+Sub Copy_Table_Outline(old As Worksheet, cur As Worksheet, Row As Integer, Col As Integer, res As Worksheet)
+    ' Copies row and column data that will NOT be checked
+    ' Note: useing helper to dynamically size;
+    ' IF NOT ALL ROWS/COLUMNS COMPARED use flat maximums
+    '
+    
+    Dim helper_row As Integer, helper_col As Integer, row_max As Integer, col_max As Integer
+    helper_row = Row - 2
+    helper_col = 3
+    
+    If old.UsedRange.Rows.Count > cur.UsedRange.Rows.Count Then
+        old.Select
+        row_max = old.Cells(old.Rows.Count, helper_col).End(xlUp).Row
+        col_max = old.Cells(helper_row, old.Columns.Count).End(xlToLeft).Column
+    Else
+        cur.Select
+        row_max = cur.Cells(cur.Rows.Count, helper_col).End(xlUp).Row
+        col_max = cur.Cells(helper_row, cur.Columns.Count).End(xlToLeft).Column
+    End If
+    'row_max = 300
+    'col_max = 100
+    
+    If old.UsedRange.Rows.Count > cur.UsedRange.Rows.Count Then
+        'copy from as-is
+        old.Select
+        old.Range(Cells(1, 1), Cells(row_max, Col - 1)).Copy 'Columns
+        res.Select
+        Cells(1, 1).PasteSpecial
+        old.Select
+        old.Range(Cells(1, Col), Cells(Row - 1, col_max)).Copy 'Rows
+        res.Select
+        Cells(1, Col).PasteSpecial
+        old.Select
+        old.Range(Cells(Row, Col), Cells(row_max, col_max)).Copy 'Middle formats
+        res.Select
+        res.Range(Cells(Row, Col), Cells(row_max, col_max)).PasteSpecial Paste:=xlPasteFormats
+        old.Select
+        old.Range(Cells(1, 1), Cells(1, col_max)).Copy 'column widths
+        res.Select
+        res.Range(Cells(1, 1), Cells(1, col_max)).PasteSpecial Paste:=xlPasteColumnWidths
+    Else
+        'copy from to-be
+        cur.Select
+        cur.Range(Cells(1, 1), Cells(row_max, Col - 1)).Copy 'Columns
+        res.Select
+        Cells(1, 1).PasteSpecial
+        cur.Select
+        cur.Range(Cells(1, Col), Cells(Row - 1, col_max)).Copy 'Rows
+        res.Select
+        Cells(1, Col).PasteSpecial
+        cur.Select
+        cur.Range(Cells(Row, Col), Cells(row_max, col_max)).Copy 'Middle formats
+        res.Select
+        res.Range(Cells(Row, Col), Cells(row_max, col_max)).PasteSpecial Paste:=xlPasteFormats
+        cur.Select
+        cur.Range(Cells(1, 1), Cells(1, col_max)).Copy 'column widths
+        res.Select
+        res.Range(Cells(1, 1), Cells(1, col_max)).PasteSpecial Paste:=xlPasteColumnWidths
+    End If
+    
+End Sub
+
+
+Sub Format_Builder(out_ws As Worksheet, m As Integer, n As Integer, as_is_val As Variant, to_be_val As Variant, old_color As Long, new_color As Long)
+    ' Applies formatting to text sections
+    '
+    
+    'Generate Output
+    Dim out_val As Variant
+    out_val = as_is_val & " " & to_be_val
+    out_ws.Cells(m, n).Value = out_val
+    
+    'Format Old + Seperator + New
+    With out_ws.Cells(m, n).Characters(Start:=1, Length:=Len(as_is_val)).Font
+        .Color = old_color
+        .Strikethrough = True 'Struck
+    End With
+    With out_ws.Cells(m, n).Characters(Start:=Len(as_is_val) + 1, Length:=1).Font
+        .Color = RGB(0, 0, 0) 'Black
+        .Strikethrough = False 'No Strike
+    End With
+    With out_ws.Cells(m, n).Characters(Start:=Len(as_is_val) + 2, Length:=Len(to_be_val)).Font
+        .Color = new_color
+        .Strikethrough = False 'No Strike
+    End With
+    
+End Sub
+
+
+Sub Data_Loop(as_is_ws As Worksheet, to_be_ws As Worksheet, out_ws As Worksheet, Row As Integer, Col As Integer)
+    ' Looping through main data structure to compare old to new
+    ' Joins fields together when they are different sends to be formatted
+    '
+    
+    Dim m As Integer, n As Integer
+    Dim as_is_val As Variant, to_be_val As Variant
+    Dim color_black As Long, color_red As Long, color_blue As Long, color_green As Long
+    
+    'Define format colors
+    color_black = RGB(0, 0, 0)
+    color_red = RGB(192, 0, 0)
+    color_blue = RGB(0, 112, 192)
+    color_green = RGB(0, 176, 80)
+
+    'Looping through matrix
+    For m = Row To 999
+        For n = Col To 250
+            as_is_val = as_is_ws.Cells(m, n).Value
+            to_be_val = to_be_ws.Cells(m, n).Value
+            
+            If as_is_val = to_be_val Then 'same value
+                out_val = to_be_val
+                out_ws.Cells(m, n).Value = out_val
+            Else 'not the same
+                If IsEmpty(as_is_ws.Cells(m, n)) Or IsEmpty(to_be_ws.Cells(m, n)) Then 'at least one blank
+                    If IsEmpty(as_is_ws.Cells(m, n)) Then
+                        'added since our rec
+                        Call Format_Builder(out_ws, m, n, as_is_val, to_be_val, color_black, color_blue)
+                    End If
+                    If IsEmpty(to_be_ws.Cells(m, n)) Then
+                        'removed since our rec
+                        Call Format_Builder(out_ws, m, n, as_is_val, to_be_val, color_red, color_blue)
+                    End If
+                Else 'None blank
+                    If IsNumeric(as_is_ws.Cells(m, n)) And IsNumeric(to_be_ws.Cells(m, n)) Then 'both numeric
+                        If as_is_val > to_be_val Then
+                            'lowered threshold
+                            Call Format_Builder(out_ws, m, n, as_is_val, to_be_val, color_black, color_red)
+                        Else
+                            'increased threshold
+                            Call Format_Builder(out_ws, m, n, as_is_val, to_be_val, color_black, color_green)
+                        End If
+                    Else
+                        'its different, valued, but 1 of either (1) both str or (2) mixed type
+                        Call Format_Builder(out_ws, m, n, as_is_val, to_be_val, color_black, color_blue)
+                    End If
+                End If
+            End If
+        Next n
+    Next m
+
+End Sub
